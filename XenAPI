@@ -1,0 +1,202 @@
+import sys
+import XenAPI
+import argparse
+import pprint
+
+##
+#Temporarily setting hosts info
+xenhost = '192.168.1.12'
+xenuser = 'root'
+xenpassword = 'password'
+
+##
+#Description: Setting up arguments
+#Arguments:
+#action
+##build
+##list
+##list-all
+##delete
+##power-on
+##power-off
+#vmtype
+#uuid
+#label
+
+parser = argparse.ArgumentParser()
+parser.add_argument('action', help='build, list, list-all, delete, power-on, '\
+    'power-off')
+parser.add_argument('-v','--vmtype',type=str, help='Used in conjunction with  '\
+    '"build". Pick one: rm424, rm425, cent6, cent7, ubuntu')
+parser.add_argument('-u','--uuid',type=str, help='UUID of the VM to be  '\
+    'actioned; get this from running a \'list\'')
+parser.add_argument('-l','--label',type=str, help='Label for a VM name. Allows '\
+    'you to slightly customize the name of your VMs. Limited to 8 characters.')
+args = parser.parse_args()
+
+
+
+##
+#List of supported images
+vmtypes = [
+           'rm425',
+           'cent6', 
+           'cent7',
+           'ubuntu'
+          ]
+
+
+##
+#Maping template UUID of VMs to be copied
+templatemap = {
+    'cent6': '2e9e14a8-1a0c-6be4-0eb5-163fade782ca'
+}
+
+
+##
+#Name: arg_check
+#Description: just takes the name of the missing arg and reprints
+def arg_check(argname):
+    print "%s not defined, please utilize the correct flag for %s"  %(argname, argname)
+    sys.exit(1)
+
+
+##
+#Using to copy vms from defined templates
+def copy_from_vm(session, vm_uuid, vm_name="Test VM", sr=None):
+    if not sr:
+        sr_ref = (session.xenapi.SR.get_by_name_label('Local storage'))[0]
+    vm_template_ref = (session.xenapi.VM.get_by_uuid(vm_uuid))
+    vm_ref = session.xenapi.VM.copy(vm_template_ref, vm_name, sr_ref)
+    return vm_ref
+
+##
+#NAME: delete_vm
+#Description: takes session object and UUID of the VM to be destroyed.
+#This will also delete any associated vdi/chains with the VM
+def delete_vm(session, uuid):
+    try:
+       vm_delete_ref = session.xenapi.VM.get_by_uuid(uuid)
+    except XenAPI.Failure, e:
+       print "Incorrect UUID, please check: %s" % e
+       sys.exit(1)
+    vbds = session.xenapi.VM.get_VBDs(vm_delete_ref)
+    for vbd in vbds:
+        vdi_ref = session.xenapi.VBD.get_VDI(vbd)
+        if vdi_ref == 'OpaqueRef:NULL':
+           continue
+        session.xenapi.VDI.destroy(vdi_ref) 
+    session.xenapi.VM.destroy(vm_delete_ref)
+
+def list_vms(session):
+    vms = session.xenapi.VM.get_all()
+    print "Server has %d VM objects (this includes templates):" % (len(vms))
+
+    for vm in vms:
+        record = session.xenapi.VM.get_record(vm)
+        if not(record["is_a_template"]) and not(record["is_control_domain"]):
+            record = session.xenapi.VM.get_record(vm) 
+            memory = (int(record["memory_static_max"])) / (1024) / (1024) 
+            print "VM: %s" % record["name_label"]
+            print "MEMORY: %smb" % memory
+            print "POWER STATE: %s" % record["power_state"]
+            print "SNAP SHOTS: %s" % record["snapshots"]
+            print "UUID: %s" % record["uuid"]
+            print "\n"
+            #pprint.pprint(record)
+
+##
+#Name: power_on_vm
+#Description: takes session object, and UUID and starts the VM with the UUID
+def power_on_vm(session, uuid):
+    try:
+      vm = session.xenapi.VM.get_by_uuid(uuid)
+    except XenAPI.Failure, e:
+       print "Incorrect UUID, please check: %s" % e
+       sys.exit(1)
+
+    record = session.xenapi.VM.get_record(vm)
+    name = record["name_label"]
+
+    if record["power_state"] == "Running":
+        print "%s is already running" % name
+        sys.exit(1)
+    elif record["power_state"] == "Suspended":
+        print "%s is Suspended, powering on" % name
+    elif record["power_state"] == "Halted":
+        print "%s is Halted, powering on" % name
+    
+    session.xenapi.VM.start(vm,False, False) 
+
+##
+#Name: power_off_vm
+#Description: takes session object, and UUID and stops the VM with the UUID
+def power_off_vm(session, uuid):
+    try:
+      vm = session.xenapi.VM.get_by_uuid(uuid)
+    except XenAPI.Failure, e:
+       print "Incorrect UUID, please check: %s" % e
+       sys.exit(1)
+
+    record = session.xenapi.VM.get_record(vm)
+    name = record["name_label"]
+
+    if record["power_state"] == "Halted":
+        print "%s is already Halted" % name
+        sys.exit(1)
+    elif record["power_state"] == "Suspended":
+        print "%s is Suspended, nothing to do" % name
+        sys.ext(1)
+    elif record["power_state"] == "Running":
+        print "%s is Running, powering off" % name
+    
+    session.xenapi.VM.clean_shutdown(vm) 
+
+##
+#Name: xenapi_login
+#Discription: logs into xenserver and returns session object
+def xenapi_login(xenhost, xenuser, xenpassword):
+    session = XenAPI.Session("http://%s" % xenhost)
+    session.xenapi.login_with_password(xenuser,xenpassword)
+    return session
+
+
+
+class __main__():
+    session = xenapi_login(xenhost, xenuser, xenpassword)
+    if args.action == "build":
+        if not args.vmtype:
+            #print "No build VM type was set, please specify with the -v or --vmtype"
+            arg_check("vmtype")
+        elif args.vmtype not in vmtypes:
+            print 'Unrecognized vmtype: %s. Specify a valid vmtype or use '\
+                '-h for help.' % (args.vmtype)
+            sys.exit(1)
+        elif not args.label:
+            #print "No label for vm specified, please specify with -l or --label"
+            arg_check("label")
+        vmtype = args.vmtype
+        vm_name = args.label
+        copy_from_vm(session, templatemap[vmtype], vm_name)
+    if args.action == "delete":
+        if not args.uuid:
+           arg_check("uuid")
+        uuid = args.uuid
+        delete_vm(session, uuid)
+    if args.action == "list":
+       list_vms(session)
+       sys.exit(0)
+    if args.action == "power-on":
+       if not args.uuid:
+           arg_check("uuid")
+       uuid = args.uuid
+       power_on_vm(session, uuid)
+    if args.action == "power-off":
+       if not args.uuid:
+           arg_check("uuid")
+       uuid = args.uuid
+       power_off_vm(session, uuid)
+
+
+   
+
