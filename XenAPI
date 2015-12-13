@@ -201,36 +201,40 @@ class __main__():
     xenpassword = args.xenpassword
 
     if args.action:
-        session = xenapi_login(xenhost, xenuser, xenpassword)
         if args.action not in actions:
             print 'Unrecongizned action: %s, please use one of the allowed actions %s' % (args.action, `actions`)
+
+        session = xenapi_login(xenhost, xenuser, xenpassword)
+
         if args.action == "build":
             if not args.vmtype:
-                #print "No build VM type was set, please specify with the -v or --vmtype"
                 arg_check("vmtype")
             elif args.vmtype not in vmtypes:
                 print 'Unrecognized vmtype: %s. Specify a valid vmtype or use '\
                     '-h for help.' % (args.vmtype)
                 sys.exit(1)
             elif not args.label:
-                #print "No label for vm specified, please specify with -l or --label"
                 arg_check("label")
             vmtype = args.vmtype
             vm_name = args.label
             copy_from_vm(session, templatemap[vmtype], vm_name)
+
         if args.action == "delete":
             if not args.uuid:
                arg_check("uuid")
             uuid = args.uuid
             delete_vm(session, uuid)
+
         if args.action == "list":
            list_vms(session)
            sys.exit(0)
+
         if args.action == "power-on":
            if not args.uuid:
                arg_check("uuid")
            uuid = args.uuid
            power_on_vm(session, uuid)
+           
         if args.action == "power-off":
            if not args.uuid:
                arg_check("uuid")
