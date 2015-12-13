@@ -9,13 +9,13 @@ import pprint
 #Temporarily setting hosts info
 xenhost = '192.168.1.12'
 xenuser = 'root'
-xenpassword = 'password'
+xenpassword = '1004728Ab!'
 
 ##
 #Description: Setting up arguments
 #Arguments:
 #action
-##build
+##buildl
 ##list
 ##list-all
 ##delete
@@ -29,7 +29,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('action', help='build, list, list-all, delete, power-on, '\
     'power-off')
 parser.add_argument('-v','--vmtype',type=str, help='Used in conjunction with  '\
-    '"build". Pick one: rm424, rm425, cent6, cent7, ubuntu')
+    '"build". Pick one: rm425, cent6, cent7, ubuntu')
 parser.add_argument('-u','--uuid',type=str, help='UUID of the VM to be  '\
     'actioned; get this from running a \'list\'')
 parser.add_argument('-l','--label',type=str, help='Label for a VM name. Allows '\
@@ -91,6 +91,12 @@ def delete_vm(session, uuid):
     except XenAPI.Failure, e:
        print "Incorrect UUID, please check: %s" % e
        sys.exit(1)
+
+    record = session.xenapi.VM.get_record(vm_delete_ref)
+    if record["power_state"] == "Running":
+        print "%s is running, shutting down" % record["name_label"]
+        session.xenapi.VM.clean_shutdown(vm_delete_ref)
+
     vbds = session.xenapi.VM.get_VBDs(vm_delete_ref)
     for vbd in vbds:
         vdi_ref = session.xenapi.VBD.get_VDI(vbd)
