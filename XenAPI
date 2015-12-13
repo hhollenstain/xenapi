@@ -7,9 +7,13 @@ import pprint
 
 ##
 #Temporarily setting hosts info
-xenhost = '192.168.1.12'
-xenuser = 'root'
-xenpassword = '1004728Ab!'
+#NOW handled by the -H,-U,-P flags
+
+#xenhost = '192.168.1.12'
+#xenuser = 'root'
+#xenpassword = 'password'
+
+
 
 ##
 #Description: Setting up arguments
@@ -34,6 +38,10 @@ parser.add_argument('-u','--uuid',type=str, help='UUID of the VM to be  '\
     'actioned; get this from running a \'list\'')
 parser.add_argument('-l','--label',type=str, help='Label for a VM name. Allows '\
     'you to slightly customize the name of your VMs. Limited to 8 characters.')
+parser.add_argument('-H','--xenhost', type=str, help='Host of xenserver')
+parser.add_argument('-U','--xenuser', type=str, help='xen usernamer')
+parser.add_argument('-P','--xenpassword', type=str, help='xenuser passsword')
+
 args = parser.parse_args()
 
 
@@ -174,12 +182,24 @@ def power_off_vm(session, uuid):
 #Discription: logs into xenserver and returns session object
 def xenapi_login(xenhost, xenuser, xenpassword):
     session = XenAPI.Session("http://%s" % xenhost)
-    session.xenapi.login_with_password(xenuser,xenpassword)
+    try:
+          session.xenapi.login_with_password(xenuser,xenpassword)
+    except XenAPI.Failure, e:
+          print "Login failure: %s" % e
+          sys.exit(1)
     return session
 
 
 
 class __main__():
+    if not args.xenhost or not args.xenpassword or not args.xenuser:
+        print 'Missing required connection information.. host(-H), user(-U), password(-P)'
+        sys.exit(1)
+
+    xenhost = args.xenhost
+    xenuser = args.xenuser
+    xenpassword = args.xenpassword
+
     if args.action:
         session = xenapi_login(xenhost, xenuser, xenpassword)
         if args.action not in actions:
