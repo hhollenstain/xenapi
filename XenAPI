@@ -1,20 +1,21 @@
 #!/usr/bin/python
 
+##################################################################
+#
+#
+#                      Version:    1
+#                      Usage: XenAPI [-H <xenserver IP>] [-U <xenserver username>] [-P <xenuser password>]| action[<build>,<list>,<power-on>,<power-off>]
+#
+#
+#
+
+
+
 import sys
 import XenAPI
 import argparse
 import pprint
 import time
-
-##
-#Temporarily setting hosts info
-#NOW handled by the -H,-U,-P flags
-
-#xenhost = '192.168.1.12'
-#xenuser = 'root'
-#xenpassword = 'password'
-
-
 
 ##
 #Description: Setting up arguments
@@ -53,17 +54,18 @@ actions = [
             'list',
             'power-on',
             'power-off',
-            'delete'
+            'delete',
+            'search'
           ]
 
 ##
 #List of supported images
-vmtypes = [
-           'rm425',
-           'cent6', 
-           'cent7',
-           'ubuntu'
-          ]
+#vmtypes = [
+#           'rm425',
+#           'cent6', 
+#           'cent7',
+#           'ubuntu'
+#          ]
 
 
 ##
@@ -123,6 +125,7 @@ def delete_vm(session, uuid):
 def list_vm(session, vm_ref):
     ##
     #Grabbing VM record
+    print 'DEBUG: %s' % vm_ref
     record = session.xenapi.VM.get_record(vm_ref)
     ##
     #Grabbing xenstore records for OS/IP information
@@ -198,6 +201,15 @@ def power_off_vm(session, uuid):
     
     session.xenapi.VM.clean_shutdown(vm) 
 
+def search_vm(session, vm_name_or_uuid):
+  search_ref = session.xenapi.VM.get_by_name_label(vm_name_or_uuid)[0]
+  if not search_ref:
+      search_ref = session.xenapi.VM.get_by_uuid(vm_name_or_uuid)
+      if not search_ref:
+          print "UUID or NAME not found: %s" % vm_name_or_uuid
+          sys.exit(1)
+  list_vm(session, search_ref)
+
 ##
 #Name: xenapi_login
 #Discription: logs into xenserver and returns session object
@@ -230,24 +242,33 @@ class __main__():
         if args.action == "build":
             if not args.vmtype:
                 arg_check("vmtype")
-            elif args.vmtype not in vmtypes:
-                print 'Unrecognized vmtype: %s. Specify a valid vmtype or use '\
+            elif args.vmtype not in templatemap:
+                print 'Unrecognized vmtype: %s. Specify a valid vmtype set in the templatemap dictionary'\
                     '-h for help.' % (args.vmtype)
                 sys.exit(1)
             elif not args.label:
                 arg_check("label")
             vmtype = args.vmtype
             vm_name = args.label
-            if vmtype not in templatemap:
-                print "Error, template not mapped for this vmtype: %s" % vmtype
-                sys.exit(1)
+#            if vmtype not in templatemap:
+#                print "Error, template not mapped for this vmtype: %s" % vmtype
+#                sys.exit(1)
             ##
             #Get the returned refrenced VM object from the build, to power it on
             vm_ref = copy_from_vm(session, templatemap[vmtype], vm_name)
             uuid = session.xenapi.VM.get_record(vm_ref)["uuid"]
+            print 'VM: %s finished building, will be starting \n' % vm_name
             power_on_vm(session, uuid)
-            time.sleep(10)
-            list_vm(session, vm_ref)
+            ##
+            #Waiting 10 seconds, as the agent tool, will take a few seconds to report guest metrics
+            #and we will capture any failures if metrics have yet to populate and wait 10 seconds
+            try:
+                time.sleep(10)
+                list_vm(session, vm_ref)
+            except XenAPI.Failure, e:
+                print "Guest Metrics still populating, waiting 10 seconds \n"
+                time.sleep(10)
+                list_vm(session, vm_ref)
 
         if args.action == "delete":
             if not args.uuid:
@@ -270,6 +291,16 @@ class __main__():
                arg_check("uuid")
            uuid = args.uuid
            power_off_vm(session, uuid)
+        if args.action == "search":
+            if not args.uuid and not args.label:
+                arg_check("uuid or label")
+            if args.uuid:
+                vm = args.uuid
+            elif args.label:
+                vm = args.label
+            search_vm(session, vm)
+
+
 
 
    
