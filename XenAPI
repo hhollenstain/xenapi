@@ -58,15 +58,6 @@ actions = [
             'search'
           ]
 
-##
-#List of supported images
-#vmtypes = [
-#           'rm425',
-#           'cent6', 
-#           'cent7',
-#           'ubuntu'
-#          ]
-
 
 ##
 #Maping template UUID of VMs to be copied
@@ -250,9 +241,6 @@ class __main__():
                 arg_check("label")
             vmtype = args.vmtype
             vm_name = args.label
-#            if vmtype not in templatemap:
-#                print "Error, template not mapped for this vmtype: %s" % vmtype
-#                sys.exit(1)
             ##
             #Get the returned refrenced VM object from the build, to power it on
             vm_ref = copy_from_vm(session, templatemap[vmtype], vm_name)
