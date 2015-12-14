@@ -4,6 +4,7 @@ import sys
 import XenAPI
 import argparse
 import pprint
+import time
 
 ##
 #Temporarily setting hosts info
@@ -110,8 +111,36 @@ def delete_vm(session, uuid):
         vdi_ref = session.xenapi.VBD.get_VDI(vbd)
         if vdi_ref == 'OpaqueRef:NULL':
            continue
+        print "Deleting VDI: %s" % vdi_ref
         session.xenapi.VDI.destroy(vdi_ref) 
+
+    print "Deleting VM: %s with UUID: %s" % (record["name_label"], record["uuid"])
     session.xenapi.VM.destroy(vm_delete_ref)
+
+##
+#NAME: list_vm
+#DESCRIPTION: Takes session object, and vm refrence object to list the requested information 
+def list_vm(session, vm_ref):
+    ##
+    #Grabbing VM record
+    record = session.xenapi.VM.get_record(vm_ref)
+    ##
+    #Grabbing xenstore records for OS/IP information
+    store_ref =  session.xenapi.VM_guest_metrics.get_record(record['guest_metrics'])
+    ##
+    #Converting memory from bytes to megabytes
+    memory = (int(record["memory_static_max"])) / (1024) / (1024) 
+    print "VM: %s" % record["name_label"]
+    print "IP: %s" % store_ref['networks']['0/ip']
+    print "DISTRO: %s" % store_ref['os_version']['distro']
+    print "KERNEL: %s" % store_ref['os_version']['uname']
+    print "MEMORY: %smb" % memory
+    print "POWER STATE: %s" % record["power_state"]
+    print "SNAP SHOTS: %s" % record["snapshots"]
+    print "UUID: %s" % record["uuid"]
+    print "\n"
+
+
 
 def list_vms(session):
     vms = session.xenapi.VM.get_all()
@@ -120,15 +149,7 @@ def list_vms(session):
     for vm in vms:
         record = session.xenapi.VM.get_record(vm)
         if not(record["is_a_template"]) and not(record["is_control_domain"]):
-            record = session.xenapi.VM.get_record(vm) 
-            memory = (int(record["memory_static_max"])) / (1024) / (1024) 
-            print "VM: %s" % record["name_label"]
-            print "MEMORY: %smb" % memory
-            print "POWER STATE: %s" % record["power_state"]
-            print "SNAP SHOTS: %s" % record["snapshots"]
-            print "UUID: %s" % record["uuid"]
-            print "\n"
-            #pprint.pprint(record)
+            list_vm(session, vm)
 
 ##
 #Name: power_on_vm
@@ -217,7 +238,16 @@ class __main__():
                 arg_check("label")
             vmtype = args.vmtype
             vm_name = args.label
-            copy_from_vm(session, templatemap[vmtype], vm_name)
+            if vmtype not in templatemap:
+                print "Error, template not mapped for this vmtype: %s" % vmtype
+                sys.exit(1)
+            ##
+            #Get the returned refrenced VM object from the build, to power it on
+            vm_ref = copy_from_vm(session, templatemap[vmtype], vm_name)
+            uuid = session.xenapi.VM.get_record(vm_ref)["uuid"]
+            power_on_vm(session, uuid)
+            time.sleep(10)
+            list_vm(session, vm_ref)
 
         if args.action == "delete":
             if not args.uuid:
