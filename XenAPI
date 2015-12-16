@@ -218,15 +218,6 @@ def power_off_vm(session, uuid):
     
     session.xenapi.VM.clean_shutdown(vm) 
 
-#def search_vm(session, vm_name_or_uuid):
-#  search_ref = session.xenapi.VM.get_by_name_label(vm_name_or_uuid)[0]
-#  if not search_ref:
-#      search_ref = session.xenapi.VM.get_by_uuid(vm_name_or_uuid)
-#      if not search_ref:
-#          print "UUID or NAME not found: %s" % vm_name_or_uuid
-#          sys.exit(1)
-#  list_vm(session, search_ref)
-
 def search_vm(session, label=None, uuid=None):
     
     if label:
