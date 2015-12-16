@@ -62,7 +62,8 @@ actions = [
 ##
 #Maping template UUID of VMs to be copied
 templatemap = {
-    'cent6': '2e9e14a8-1a0c-6be4-0eb5-163fade782ca'
+    'cent6': '2e9e14a8-1a0c-6be4-0eb5-163fade782ca',
+    'win2008': '4faac645-b8b8-7bfd-0820-1c63f70bcc73'
 }
 
 
@@ -70,13 +71,16 @@ templatemap = {
 #Name: arg_check
 #Description: just takes the name of the missing arg and reprints
 def arg_check(argname):
-    print "%s not defined, please utilize the correct flag for %s"  %(argname, argname)
+    print "ERROR:  %s not defined, please utilize the correct flag for %s"  %(argname, argname)
     sys.exit(1)
 
 
 ##
-#Using to copy vms from defined templates
+#NAME: copy_from_vm
+#Description: Using to copy vms from defined templates
 def copy_from_vm(session, vm_uuid, vm_name="Test VM", sr=None):
+    ##
+    # defaulting to local storage SR, if not passed in
     if not sr:
         sr_ref = (session.xenapi.SR.get_by_name_label('Local storage'))[0]
     vm_template_ref = (session.xenapi.VM.get_by_uuid(vm_uuid))
@@ -91,23 +95,25 @@ def delete_vm(session, uuid):
     try:
        vm_delete_ref = session.xenapi.VM.get_by_uuid(uuid)
     except XenAPI.Failure, e:
-       print "Incorrect UUID, please check: %s" % e
+       print "ERROR:  Incorrect UUID, please check %s" % e
        sys.exit(1)
 
     record = session.xenapi.VM.get_record(vm_delete_ref)
     if record["power_state"] == "Running":
-        print "%s is running, shutting down" % record["name_label"]
+        print "INFO:  %s is running, shutting down" % record["name_label"]
         session.xenapi.VM.clean_shutdown(vm_delete_ref)
 
+    ##
+    #Finding all associated VDIs to clean up deleted VM
     vbds = session.xenapi.VM.get_VBDs(vm_delete_ref)
     for vbd in vbds:
         vdi_ref = session.xenapi.VBD.get_VDI(vbd)
         if vdi_ref == 'OpaqueRef:NULL':
            continue
-        print "Deleting VDI: %s" % vdi_ref
+        print "INFO:  Deleting VDI=%s" % vdi_ref
         session.xenapi.VDI.destroy(vdi_ref) 
 
-    print "Deleting VM: %s with UUID: %s" % (record["name_label"], record["uuid"])
+    print "INFO:  Deleting VM=%s with UUID=%s" % (record["name_label"], record["uuid"])
     session.xenapi.VM.destroy(vm_delete_ref)
 
 ##
@@ -116,29 +122,49 @@ def delete_vm(session, uuid):
 def list_vm(session, vm_ref):
     ##
     #Grabbing VM record
-    print 'DEBUG: %s' % vm_ref
     record = session.xenapi.VM.get_record(vm_ref)
     ##
     #Grabbing xenstore records for OS/IP information
     store_ref =  session.xenapi.VM_guest_metrics.get_record(record['guest_metrics'])
+
     ##
     #Converting memory from bytes to megabytes
     memory = (int(record["memory_static_max"])) / (1024) / (1024) 
-    print "VM: %s" % record["name_label"]
-    print "IP: %s" % store_ref['networks']['0/ip']
-    print "DISTRO: %s" % store_ref['os_version']['distro']
-    print "KERNEL: %s" % store_ref['os_version']['uname']
+
+    ##
+    #preset incase invalid options come back
+    kernel = distro = power_state = IP = []
+
+    ##
+    #Setting vars from record and guest metrics
+    name = record["name_label"]
+    IP = store_ref['networks']['0/ip']
+    distro = store_ref['os_version']['distro']
+    if distro != "windows":
+        kernel = store_ref['os_version']['uname']
+
+    power_state = record["power_state"]
+    snapshots = record["snapshots"]
+    uuid = record["uuid"]
+
+    ##
+    #Printing VM information
+    print "VM: %s" % name
+    print "IP: %s" % IP
+    print "DISTRO: %s" % distro
+    if kernel:
+        print "KERNEL: %s" % kernel
     print "MEMORY: %smb" % memory
-    print "POWER STATE: %s" % record["power_state"]
-    print "SNAP SHOTS: %s" % record["snapshots"]
-    print "UUID: %s" % record["uuid"]
+    print "POWER STATE: %s" % power_state
+    print "SNAP SHOTS: %s" % snapshots
+    print "UUID: %s" % uuid
     print "\n"
 
 
 
 def list_vms(session):
     vms = session.xenapi.VM.get_all()
-    print "Server has %d VM objects (this includes templates):" % (len(vms))
+    print "INFO:  Server has %d VM objects (this includes templates):" % (len(vms))
 
     for vm in vms:
         record = session.xenapi.VM.get_record(vm)
@@ -152,19 +178,19 @@ def power_on_vm(session, uuid):
     try:
       vm = session.xenapi.VM.get_by_uuid(uuid)
     except XenAPI.Failure, e:
-       print "Incorrect UUID, please check: %s" % e
+       print "ERROR:  Incorrect UUID, please check  %s" % e
        sys.exit(1)
 
     record = session.xenapi.VM.get_record(vm)
     name = record["name_label"]
 
     if record["power_state"] == "Running":
-        print "%s is already running" % name
+        print "INFO:  %s is already running" % name
         sys.exit(1)
     elif record["power_state"] == "Suspended":
-        print "%s is Suspended, powering on" % name
+        print "INFO:  %s is Suspended, powering on" % name
     elif record["power_state"] == "Halted":
-        print "%s is Halted, powering on" % name
+        print "INFO:  %s is Halted, powering on" % name
     
     session.xenapi.VM.start(vm,False, False) 
 
@@ -175,31 +201,51 @@ def power_off_vm(session, uuid):
     try:
       vm = session.xenapi.VM.get_by_uuid(uuid)
     except XenAPI.Failure, e:
-       print "Incorrect UUID, please check: %s" % e
+       print "ERROR:  Incorrect UUID, please check %s" % e
        sys.exit(1)
 
     record = session.xenapi.VM.get_record(vm)
     name = record["name_label"]
 
     if record["power_state"] == "Halted":
-        print "%s is already Halted" % name
+        print "INFO:  %s is already Halted" % name
         sys.exit(1)
     elif record["power_state"] == "Suspended":
-        print "%s is Suspended, nothing to do" % name
+        print "INFO:  %s is Suspended, nothing to do" % name
         sys.ext(1)
     elif record["power_state"] == "Running":
-        print "%s is Running, powering off" % name
+        print "INFO:  %s is Running, powering off" % name
     
     session.xenapi.VM.clean_shutdown(vm) 
 
-def search_vm(session, vm_name_or_uuid):
-  search_ref = session.xenapi.VM.get_by_name_label(vm_name_or_uuid)[0]
-  if not search_ref:
-      search_ref = session.xenapi.VM.get_by_uuid(vm_name_or_uuid)
-      if not search_ref:
-          print "UUID or NAME not found: %s" % vm_name_or_uuid
+#def search_vm(session, vm_name_or_uuid):
+#  search_ref = session.xenapi.VM.get_by_name_label(vm_name_or_uuid)[0]
+#  if not search_ref:
+#      search_ref = session.xenapi.VM.get_by_uuid(vm_name_or_uuid)
+#      if not search_ref:
+#          print "UUID or NAME not found: %s" % vm_name_or_uuid
+#          sys.exit(1)
+#  list_vm(session, search_ref)
+
+def search_vm(session, label=None, uuid=None):
+    
+    if label:
+      vms = session.xenapi.VM.get_all()
+      for vm in vms:
+        record = session.xenapi.VM.get_record(vm)
+        if not(record["is_a_template"]) and not(record["is_control_domain"]) and label.lower() in record["name_label"].lower():
+            list_vm(session, vm)
+    
+    if uuid:
+        try:
+            vm = session.xenapi.VM.get_by_uuid(uuid)
+        except XenAPI.Failure, e:
+            print "ERROR:  UUID NOT VALID %s" % e
+            sys.exit(1)
+        if not vm:
+          print "ERROR:  UUID or NAME not found  %s" % vm_name_or_uuid
           sys.exit(1)
-  list_vm(session, search_ref)
+        list_vm(session, vm)
 
 ##
 #Name: xenapi_login
@@ -209,7 +255,7 @@ def xenapi_login(xenhost, xenuser, xenpassword):
     try:
           session.xenapi.login_with_password(xenuser,xenpassword)
     except XenAPI.Failure, e:
-          print "Login failure: %s" % e
+          print "ERROR:  Login failure %s" % e
           sys.exit(1)
     return session
 
@@ -217,7 +263,7 @@ def xenapi_login(xenhost, xenuser, xenpassword):
 
 class __main__():
     if not args.xenhost or not args.xenpassword or not args.xenuser:
-        print 'Missing required connection information.. host(-H), user(-U), password(-P)'
+        print 'ERROR:  Missing required connection information.. host(-H), user(-U), password(-P)'
         sys.exit(1)
 
     xenhost = args.xenhost
@@ -226,7 +272,8 @@ class __main__():
 
     if args.action:
         if args.action not in actions:
-            print 'Unrecongizned action: %s, please use one of the allowed actions %s' % (args.action, `actions`)
+            print 'ERROR:  Unrecongizned action: %s, please use one of the allowed actions %s' % (args.action, `actions`)
+            sys.exit(1)
 
         session = xenapi_login(xenhost, xenuser, xenpassword)
 
@@ -234,7 +281,7 @@ class __main__():
             if not args.vmtype:
                 arg_check("vmtype")
             elif args.vmtype not in templatemap:
-                print 'Unrecognized vmtype: %s. Specify a valid vmtype set in the templatemap dictionary'\
+                print 'ERROR: Unrecognized vmtype: %s. Specify a valid vmtype set in the templatemap dictionary'\
                     '-h for help.' % (args.vmtype)
                 sys.exit(1)
             elif not args.label:
@@ -245,7 +292,7 @@ class __main__():
             #Get the returned refrenced VM object from the build, to power it on
             vm_ref = copy_from_vm(session, templatemap[vmtype], vm_name)
             uuid = session.xenapi.VM.get_record(vm_ref)["uuid"]
-            print 'VM: %s finished building, will be starting \n' % vm_name
+            print 'INFO:  VM=%s finished building, will be starting \n' % vm_name
             power_on_vm(session, uuid)
             ##
             #Waiting 10 seconds, as the agent tool, will take a few seconds to report guest metrics
@@ -254,7 +301,7 @@ class __main__():
                 time.sleep(10)
                 list_vm(session, vm_ref)
             except XenAPI.Failure, e:
-                print "Guest Metrics still populating, waiting 10 seconds \n"
+                print "INFO:  Guest Metrics still populating, waiting 10 seconds \n"
                 time.sleep(10)
                 list_vm(session, vm_ref)
 
@@ -282,11 +329,15 @@ class __main__():
         if args.action == "search":
             if not args.uuid and not args.label:
                 arg_check("uuid or label")
+            if args.uuid and args.label:
+                print "ERROR: Use either label or UUID flag, but not both at the same time"
+                sys.exit(1)
             if args.uuid:
                 vm = args.uuid
+                search_vm(session, uuid=vm)
             elif args.label:
                 vm = args.label
-            search_vm(session, vm)
+                search_vm(session, label=vm)
 
 
 
