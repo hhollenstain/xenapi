@@ -108,6 +108,13 @@ def delete_vm(session, uuid):
     #Finding all associated VDIs to clean up deleted VM
     vbds = session.xenapi.VM.get_VBDs(vm_delete_ref)
     for vbd in vbds:
+        ##
+        #We are going to try an eject any disks, if it isn't an ejectable media then just continue
+        try: 
+            session.xenapi.VBD.eject(vbd)
+            print "INFO: ejecting MEDIA %s" % vbd
+        except XenAPI.Failure:
+            print "INFO: none-ejectable media %s" % vbd 
         vdi_ref = session.xenapi.VBD.get_VDI(vbd)
         if vdi_ref == 'OpaqueRef:NULL':
            continue
@@ -145,9 +152,15 @@ def list_vm(session, vm_ref):
     ##
     #Making sure we actually have guest metrics
     if store_ref:
-        IP = store_ref['networks']['0/ip']
-        distro = store_ref['os_version']['distro']
-        if distro != "windows":
+        try:
+            IP = store_ref['networks']['0/ip']
+        except KeyError:
+            IP = "Unknown"
+        try:
+            distro = store_ref['os_version']['distro']
+        except KeyError:
+            distro = "Unknown"
+        if distro != "windows" and distro != "Unknown":
             kernel = store_ref['os_version']['uname']
 
     power_state = record["power_state"]
