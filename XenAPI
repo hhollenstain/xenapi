@@ -112,9 +112,9 @@ def delete_vm(session, uuid):
         #We are going to try an eject any disks, if it isn't an ejectable media then just continue
         try: 
             session.xenapi.VBD.eject(vbd)
-            print "INFO: ejecting MEDIA %s" % vbd
+            print "INFO:  ejecting MEDIA %s" % vbd
         except XenAPI.Failure:
-            print "INFO: none-ejectable media %s" % vbd 
+            print "INFO:  none-ejectable media %s" % vbd 
         vdi_ref = session.xenapi.VBD.get_VDI(vbd)
         if vdi_ref == 'OpaqueRef:NULL':
            continue
